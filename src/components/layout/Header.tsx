@@ -115,7 +115,7 @@ export const Header = ({ onExport, onClearAll }: HeaderProps) => {
               className="gap-2 bg-white hover:bg-gray-100 text-emerald-700 font-semibold shadow-md"
             >
               <Download className="h-4 w-4" />
-              <span className="hidden md:inline">Exportar PDF</span>
+              <span className="hidden md:inline">Gerar PDF</span>
             </Button>
           </div>
         </div>
