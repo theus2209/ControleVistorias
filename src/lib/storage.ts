@@ -1,7 +1,6 @@
 import { Vistoria, VistoriaFormData } from '@/types';
 import { supabase } from '@/lib/supabase';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 export const storageService = {
   getVistorias: async (): Promise<Vistoria[]> => {
@@ -138,121 +137,183 @@ export const storageService = {
   },
 
   exportToPDF: (vistorias: Vistoria[]): jsPDF => {
-    const doc = new jsPDF();
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const marginL = 10;
+    const marginR = 10;
+    const usableW = pageW - marginL - marginR;
 
-    // Título
-    doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Controle de Vistorias', 14, 20);
-    
-    // Data de exportação
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    const dataExportacao = new Date().toLocaleDateString('pt-BR', { 
-      day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-    doc.text(`Data de exportação: ${dataExportacao}`, 14, 28);
-
-    // Preparar dados da tabela
-    const headers = [['Nº', 'Placa/Chassi', 'Resp.', 'CPF', 'Dt. Vistoria', 'Dt. Pag.', 'Pag.', 'Proprietário', 'Nome no Pix', 'NF']];
-    
     const formatDate = (dateString: string) => {
       if (!dateString) return '-';
-      const [year, month, day] = dateString.split('-');
+      const [, month, day] = dateString.split('-');
       return `${day}/${month}`;
     };
 
-    const rows = vistorias.map(v => [
-      v.numero.toString(),
-      v.placaChassi,
-      v.responsavel,
-      v.cpf || '-',
-      formatDate(v.dataVistoria),
-      formatDate(v.dataPagamento),
-      v.tipoPagamento,
-      v.proprietario,
-      v.nomeNoPix || '-',
-      v.notaFiscal ? 'ok' : '-'
-    ]);
+    // Colunas: widths somam usableW (277mm em landscape A4)
+    const cols = [
+      { label: 'Nº',           width: 10, align: 'center' as const },
+      { label: 'Placa/Chassi', width: 28, align: 'left'   as const },
+      { label: 'Resp.',        width: 26, align: 'left'   as const },
+      { label: 'CPF',          width: 30, align: 'left'   as const },
+      { label: 'Dt. Vistoria', width: 18, align: 'center' as const },
+      { label: 'Dt. Pag.',     width: 18, align: 'center' as const },
+      { label: 'Pag.',         width: 20, align: 'center' as const },
+      { label: 'Proprietário', width: 57, align: 'left'   as const },
+      { label: 'Nome no Pix',  width: 57, align: 'left'   as const },
+      { label: 'NF',           width: 13, align: 'center' as const },
+    ];
 
-    // Criar tabela
-    autoTable(doc, {
-      head: headers,
-      body: rows,
-      startY: 35,
-      theme: 'grid',
-      headStyles: {
-        fillColor: [54, 126, 235],
-        textColor: 255,
-        fontStyle: 'bold',
-        fontSize: 9
-      },
-      bodyStyles: {
-        fontSize: 8,
-        cellPadding: 3
-      },
-      alternateRowStyles: {
-        fillColor: [240, 248, 255]
-      },
-      columnStyles: {
-        0: { cellWidth: 10, halign: 'center', overflow: 'visible' },
-        1: { cellWidth: 20 },
-        2: { cellWidth: 22, overflow: 'visible' },
-        3: { cellWidth: 22, fontSize: 8 },
-        4: { cellWidth: 14, halign: 'center', overflow: 'visible' },
-        5: { cellWidth: 14, halign: 'center', overflow: 'visible' },
-        6: { cellWidth: 16, halign: 'center' },
-        7: { cellWidth: 24 },
-        8: { cellWidth: 24 },
-        9: { cellWidth: 10, halign: 'center' }
-      },
-      margin: { top: 35, left: 14, right: 14 },
-      didParseCell: (data) => {
-        // Aplicar cores de texto na coluna de pagamento (índice 6)
-        if (data.column.index === 6 && data.section === 'body') {
-          const valor = data.cell.text[0];
-          if (valor === 'Pix') {
-            data.cell.styles.textColor = [59, 130, 246]; // Azul
-            data.cell.styles.fontStyle = 'bold';
-          } else if (valor === 'Dinheiro') {
-            data.cell.styles.textColor = [34, 197, 94]; // Verde
-            data.cell.styles.fontStyle = 'bold';
-          } else if (valor === 'Pendente') {
-            data.cell.styles.textColor = [239, 68, 68]; // Vermelho
-            data.cell.styles.fontStyle = 'bold';
-          }
-        }
-      },
-      didDrawPage: (data) => {
-        // Rodapé com número de página
-        const pageCount = (doc as any).internal.getNumberOfPages();
-        doc.setFontSize(8);
-        doc.setTextColor(128);
-        const pageText = `Página ${data.pageNumber} de ${pageCount}`;
-        doc.text(pageText, doc.internal.pageSize.getWidth() / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
+    const rowH = 7;
+    const headerH = 9;
+    const fontSize = 8;
+    const headerFontSize = 8;
+    let y = 0;
+
+    const drawHeader = (pageNum: number) => {
+      // Page title
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text('Controle de Vistorias', marginL, 12);
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      const dataExportacao = new Date().toLocaleDateString('pt-BR', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
+      doc.text(`Data de exportação: ${dataExportacao}`, marginL, 19);
+
+      // Table header background
+      doc.setFillColor(54, 126, 235);
+      doc.rect(marginL, 23, usableW, headerH, 'F');
+
+      doc.setFontSize(headerFontSize);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255);
+
+      let x = marginL;
+      cols.forEach(col => {
+        const tx = col.align === 'center' ? x + col.width / 2 : x + 1;
+        doc.text(col.label, tx, 23 + headerH - 2, { align: col.align === 'center' ? 'center' : 'left', maxWidth: col.width - 2 });
+        x += col.width;
+      });
+
+      return 23 + headerH; // y after header
+    };
+
+    const drawPageNumber = (pageNum: number, total: number) => {
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(128, 128, 128);
+      doc.text(`Página ${pageNum} de ${total}`, pageW / 2, pageH - 5, { align: 'center' });
+    };
+
+    const getPagColor = (tipo: string): [number, number, number] => {
+      if (tipo === 'Pix') return [59, 130, 246];
+      if (tipo === 'Dinheiro') return [34, 197, 94];
+      return [239, 68, 68];
+    };
+
+    // First page header
+    y = drawHeader(1);
+
+    doc.setFontSize(fontSize);
+
+    vistorias.forEach((v, idx) => {
+      const row = [
+        v.numero.toString(),
+        v.placaChassi,
+        v.responsavel,
+        v.cpf || '-',
+        formatDate(v.dataVistoria),
+        formatDate(v.dataPagamento),
+        v.tipoPagamento,
+        v.proprietario,
+        v.nomeNoPix || '-',
+        v.notaFiscal ? 'ok' : '-',
+      ];
+
+      // Check if we need a new page
+      if (y + rowH > pageH - 15) {
+        // page number on current page (placeholder, will fix after)
+        doc.addPage();
+        y = drawHeader(doc.internal.getNumberOfPages());
+        doc.setFontSize(fontSize);
       }
+
+      // Alternate row background
+      if (idx % 2 === 1) {
+        doc.setFillColor(240, 248, 255);
+        doc.rect(marginL, y, usableW, rowH, 'F');
+      }
+
+      // Row border
+      doc.setDrawColor(200, 200, 200);
+      doc.rect(marginL, y, usableW, rowH);
+
+      // Cell content
+      let x = marginL;
+      cols.forEach((col, ci) => {
+        // Cell vertical border
+        if (ci > 0) {
+          doc.setDrawColor(200, 200, 200);
+          doc.line(x, y, x, y + rowH);
+        }
+
+        doc.setFont('helvetica', 'normal');
+
+        if (ci === 6) {
+          // Payment column: colored text
+          const [r, g, b] = getPagColor(row[ci]);
+          doc.setTextColor(r, g, b);
+          doc.setFont('helvetica', 'bold');
+        } else {
+          doc.setTextColor(0, 0, 0);
+        }
+
+        const tx = col.align === 'center' ? x + col.width / 2 : x + 1;
+        const cellText = doc.splitTextToSize(row[ci], col.width - 2);
+        const lineToShow = cellText[0] || '';
+        doc.text(lineToShow, tx, y + rowH - 2, { align: col.align === 'center' ? 'center' : 'left' });
+
+        x += col.width;
+      });
+
+      y += rowH;
     });
 
-    // Estatísticas no final
-    const finalY = (doc as any).lastAutoTable.finalY + 10;
+    // Summary
+    y += 6;
+    if (y + 35 > pageH - 15) {
+      doc.addPage();
+      y = 20;
+    }
+
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
-    doc.text('Resumo:', 14, finalY);
-    
+    doc.setTextColor(0, 0, 0);
+    doc.text('Resumo:', marginL, y);
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+
     const total = vistorias.length;
     const pagas = vistorias.filter(v => v.tipoPagamento !== 'Pendente').length;
     const pendentes = vistorias.filter(v => v.tipoPagamento === 'Pendente').length;
     const comNF = vistorias.filter(v => v.notaFiscal).length;
-    
-    doc.text(`Total de Vistorias: ${total}`, 14, finalY + 7);
-    doc.text(`Pagas: ${pagas}`, 14, finalY + 14);
-    doc.text(`Pendentes: ${pendentes}`, 14, finalY + 21);
-    doc.text(`Com Nota Fiscal: ${comNF}`, 14, finalY + 28);
+
+    doc.text(`Total de Vistorias: ${total}`, marginL, y + 7);
+    doc.text(`Pagas: ${pagas}`, marginL, y + 14);
+    doc.text(`Pendentes: ${pendentes}`, marginL, y + 21);
+    doc.text(`Com Nota Fiscal: ${comNF}`, marginL, y + 28);
+
+    // Add page numbers to all pages
+    const totalPages = doc.internal.getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      drawPageNumber(p, totalPages);
+    }
 
     return doc;
   }
