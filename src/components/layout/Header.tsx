@@ -106,7 +106,7 @@ export const Header = ({ onExport, onClearAll }: HeaderProps) => {
               className="gap-2 bg-red-500 hover:bg-red-600 text-white font-semibold shadow-md"
             >
               <Trash2 className="h-4 w-4" />
-              <span className="hidden md:inline">Apagar todas vistorias</span>
+              <span className="hidden md:inline">Apagar vistorias</span>
             </Button>
             <Button 
               onClick={onExport} 
