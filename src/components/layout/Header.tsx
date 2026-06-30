@@ -68,9 +68,6 @@ export const Header = ({ onExport, onClearAll }: HeaderProps) => {
           
           <div className="flex-1 flex justify-end gap-2">
             <div className="flex items-center gap-3">
-              <span className="text-sm text-white/90 font-medium hidden md:inline">
-                {user?.username}
-              </span>
               <Button 
                 onClick={() => navigate('/dashboard')} 
                 variant="secondary" 
